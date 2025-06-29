@@ -1,4 +1,4 @@
-// src/app/api/suggest-validations/route.ts
+
 import { NextResponse } from 'next/server';
 
 // You are correctly using the latest version of the Mistral model.
