@@ -1,4 +1,5 @@
 
+import { DataRow } from '@/lib/types';
 import { NextResponse } from 'next/server';
 
 // You are correctly using the latest version of the Mistral model.
@@ -6,7 +7,7 @@ const API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7
 const API_KEY = process.env.HUGGING_FACE_API_KEY;
 
 // Helper to stringify data samples remains the same.
-function stringifyDataSample(data: any[], count = 3) {
+function stringifyDataSample(data: DataRow[], count = 3) {
   if (!data || data.length === 0) return '[]';
   const headers = Object.keys(data[0]).filter(k => k !== 'id' && k !== 'errors');
   const sample = data.slice(0, count).map(row => {

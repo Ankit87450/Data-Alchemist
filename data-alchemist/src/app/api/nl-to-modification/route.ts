@@ -54,7 +54,7 @@ Generate a SQL SELECT statement to find the rows described in the user request. 
     }
 
     const result = await response.json();
-    let generatedText = result[0].generated_text;
+    const generatedText = result[0].generated_text;
 
     // --- THIS LOGIC IS NOW MORE ROBUST ---
     // It intelligently assembles the final SQL command.

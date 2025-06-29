@@ -11,7 +11,7 @@ export interface ValidationError {
 export interface DataRow {
   id: string; // Unique identifier for the row within the UI
   errors?: Record<string, ValidationError>; // { columnName: { message, suggestion } }
-  [key: string]: any; // To support dynamic column keys like 'RequestedTaskIDs.0'
+  [key: string]: string | number | string[] | number[] | ValidationError | Record<string, ValidationError> | undefined;
 }
 
 export interface Client extends DataRow {
@@ -50,7 +50,7 @@ export type Rule =
   | { type: "slotRestriction"; group: string; minCommonSlots: number }
   | { type: "loadLimit"; workerGroup: string; maxSlotsPerPhase: number }
   | { type: "phaseWindow"; task: string; allowedPhases: number[] }
-  | { type: "patternMatch"; regex: string; rule: any } // Simplified for example
+  | { type: "patternMatch"; regex: string; rule: Record<string, unknown> } // safer than any
   | { type: "precedence"; order: ('global' | 'specific')[] };
 
 // --- Prioritization ---
@@ -83,10 +83,10 @@ export interface ValidationSummaryData {
 // --- Action for State Reducer ---
 
 export type AppAction =
-  | { type: 'SET_DATA'; payload: { entity: EntityType; data: any[] } }
-  | { type: 'UPDATE_CELL'; payload: { entity: EntityType; rowIndex: number; columnId: string; value: any } }
-  | { type: 'RUN_VALIDATIONS'; payload: { clients: Client[], workers: Worker[], tasks: Task[] } }
-  | { type: 'SET_VALIDATION_RESULT'; payload: { clients: Client[], workers: Worker[], tasks: Task[], summary: ValidationSummaryData } }
+  | { type: 'SET_DATA'; payload: { entity: EntityType; data: DataRow[] } }
+  | { type: 'UPDATE_CELL'; payload: { entity: EntityType; rowIndex: number; columnId: string; value: string | number | string[] | number[] } }
+  | { type: 'RUN_VALIDATIONS'; payload: { clients: Client[]; workers: Worker[]; tasks: Task[] } }
+  | { type: 'SET_VALIDATION_RESULT'; payload: { clients: Client[]; workers: Worker[]; tasks: Task[]; summary: ValidationSummaryData } }
   | { type: 'ADD_RULE'; payload: Rule }
   | { type: 'REMOVE_RULE'; payload: { index: number } }
   | { type: 'UPDATE_PRIORITY'; payload: { key: keyof PrioritizationWeights; value: number } };

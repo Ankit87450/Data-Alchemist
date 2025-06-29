@@ -1,11 +1,16 @@
-
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
-import { Client, Worker, Task } from './types';
-import { v4 as uuidv4 } from 'uuid'; // Use `npm install uuid @types/uuid`
+import { v4 as uuidv4 } from 'uuid';
 
-// AI-like feature: Map various possible header names to a canonical name.
-const headerMappings: Record<string, Record<string, string>> = {
+// --- Define safe types ---
+import type { Client, Worker, Task } from '@/lib/types';
+
+type EntityType = 'clients' | 'workers' | 'tasks';
+type EntityRow = Client | Worker | Task;
+
+// --- Header Mappings ---
+
+const headerMappings: Record<EntityType, Record<string, string>> = {
   clients: {
     clientid: 'ClientID', client_id: 'ClientID', 'Client ID': 'ClientID',
     clientname: 'ClientName', 'Client Name': 'ClientName',
@@ -34,88 +39,113 @@ const headerMappings: Record<string, Record<string, string>> = {
   },
 };
 
-const normalizeHeaders = (headers: string[], entity: keyof typeof headerMappings): string[] => {
+// --- Normalize Headers ---
+
+const normalizeHeaders = (
+  headers: string[],
+  entity: EntityType
+): string[] => {
   const mapping = headerMappings[entity];
   return headers.map(h => mapping[h.toLowerCase().trim()] || h);
 };
 
-const normalizeRow = (row: any, entity: keyof typeof headerMappings): any => {
-    // Add a unique id for React keys
-    const newRow: Record<string, any> = { id: uuidv4(), errors: {} };
+// --- Normalize Row ---
 
-    for (const key in row) {
-        const normalizedKey = headerMappings[entity][key.toLowerCase().trim()] || key;
-        let value = row[key];
+const normalizeRow = (
+  row: Record<string, unknown>,
+  entity: EntityType
+): EntityRow => {
+  const newRow: Record<string, unknown> = {
+    id: uuidv4(),
+    errors: {},
+  };
 
-        // Type conversions and normalization
-        switch (normalizedKey) {
-            case 'PriorityLevel':
-            case 'MaxLoadPerPhase':
-            case 'Duration':
-            case 'MaxConcurrent':
-            case 'QualificationLevel':
-                newRow[normalizedKey] = Number(value) || 0;
-                break;
-            case 'RequestedTaskIDs':
-            case 'Skills':
-            case 'RequiredSkills':
-                newRow[normalizedKey] = typeof value === 'string' ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
-                break;
-            case 'AvailableSlots':
-                // Handles "[1,3,5]" or "1,3,5"
-                try {
-                  if (typeof value === 'string' && value.startsWith('[')) {
-                    newRow[normalizedKey] = JSON.parse(value);
-                  } else if (typeof value === 'string') {
-                    newRow[normalizedKey] = value.split(',').map(s => Number(s.trim()));
-                  } else {
-                     newRow[normalizedKey] = Array.isArray(value) ? value : [];
-                  }
-                } catch {
-                  newRow[normalizedKey] = [];
-                }
-                break;
-            case 'PreferredPhases':
-                // Handles "1-3" or "[2,4,5]" or "2,4,5"
-                try {
-                  if (typeof value === 'string' && value.includes('-')) {
-                    const [start, end] = value.split('-').map(Number);
-                    newRow[normalizedKey] = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-                  } else if (typeof value === 'string' && value.startsWith('[')) {
-                    newRow[normalizedKey] = JSON.parse(value);
-                  } else if (typeof value === 'string') {
-                    newRow[normalizedKey] = value.split(',').map(s => Number(s.trim()));
-                  } else {
-                    newRow[normalizedKey] = Array.isArray(value) ? value : [];
-                  }
-                } catch {
-                   newRow[normalizedKey] = [];
-                }
-                break;
-            default:
-                newRow[normalizedKey] = value;
+  for (const key in row) {
+    const normalizedKey = headerMappings[entity][key.toLowerCase().trim()] || key;
+    const rawValue = row[key];
+
+    switch (normalizedKey) {
+      case 'PriorityLevel':
+      case 'MaxLoadPerPhase':
+      case 'Duration':
+      case 'MaxConcurrent':
+      case 'QualificationLevel':
+        newRow[normalizedKey] = Number(rawValue) || 0;
+        break;
+
+      case 'RequestedTaskIDs':
+      case 'Skills':
+      case 'RequiredSkills':
+        if (typeof rawValue === 'string') {
+          newRow[normalizedKey] = rawValue.split(',').map(s => s.trim()).filter(Boolean);
+        } else {
+          newRow[normalizedKey] = Array.isArray(rawValue) ? rawValue : [];
         }
+        break;
+
+      case 'AvailableSlots':
+        try {
+          if (typeof rawValue === 'string' && rawValue.startsWith('[')) {
+            newRow[normalizedKey] = JSON.parse(rawValue);
+          } else if (typeof rawValue === 'string') {
+            newRow[normalizedKey] = rawValue.split(',').map(s => Number(s.trim()));
+          } else {
+            newRow[normalizedKey] = Array.isArray(rawValue) ? rawValue : [];
+          }
+        } catch {
+          newRow[normalizedKey] = [];
+        }
+        break;
+
+      case 'PreferredPhases':
+        try {
+          if (typeof rawValue === 'string' && rawValue.includes('-')) {
+            const [start, end] = rawValue.split('-').map(Number);
+            newRow[normalizedKey] = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+          } else if (typeof rawValue === 'string' && rawValue.startsWith('[')) {
+            newRow[normalizedKey] = JSON.parse(rawValue);
+          } else if (typeof rawValue === 'string') {
+            newRow[normalizedKey] = rawValue.split(',').map(s => Number(s.trim()));
+          } else {
+            newRow[normalizedKey] = Array.isArray(rawValue) ? rawValue : [];
+          }
+        } catch {
+          newRow[normalizedKey] = [];
+        }
+        break;
+
+      default:
+        newRow[normalizedKey] = rawValue;
     }
-    return newRow;
+  }
+
+  return newRow as EntityRow;
 };
 
+// --- File Parser ---
 
-export const parseFile = (file: File, entity: keyof typeof headerMappings): Promise<any[]> => {
+export const parseFile = (
+  file: File,
+  entity: EntityType
+): Promise<EntityRow[]> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
-    reader.onload = (e) => {
+    reader.onload = (e: ProgressEvent<FileReader>) => {
       try {
         const data = e.target?.result;
-        let jsonData: any[];
+        let jsonData: Record<string, unknown>[];
 
         if (file.name.endsWith('.csv')) {
-          const result = Papa.parse(data as string, { header: true, skipEmptyLines: true });
-          const normalizedHeaders = normalizeHeaders(result.meta.fields!, entity);
-          // Manually map data to normalized headers
-          jsonData = result.data.map((row: any) => {
-            const newRow: any = {};
-            result.meta.fields!.forEach((field, index) => {
+          const result = Papa.parse<Record<string, string>>(data as string, {
+            header: true,
+            skipEmptyLines: true,
+          });
+
+          const normalizedHeaders = normalizeHeaders(result.meta.fields ?? [], entity);
+          jsonData = result.data.map((row: Record<string, string>) => {
+            const newRow: Record<string, unknown> = {};
+            (result.meta.fields ?? []).forEach((field, index) => {
               newRow[normalizedHeaders[index]] = row[field];
             });
             return newRow;
@@ -125,12 +155,12 @@ export const parseFile = (file: File, entity: keyof typeof headerMappings): Prom
           const workbook = XLSX.read(data, { type: 'binary' });
           const sheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
-          jsonData = XLSX.utils.sheet_to_json(worksheet);
+          jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet);
         } else {
           throw new Error('Unsupported file type');
         }
 
-        const normalizedData = jsonData.map(row => normalizeRow(row, entity));
+        const normalizedData: EntityRow[] = jsonData.map(row => normalizeRow(row, entity));
         resolve(normalizedData);
       } catch (error) {
         reject(error);

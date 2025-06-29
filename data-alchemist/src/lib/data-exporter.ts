@@ -1,18 +1,16 @@
-
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import Papa from 'papaparse';
-import { AppState } from './types';
+import { AppState, DataRow } from './types';
 
 // Helper to clean data for export (remove UI-specific fields)
-const cleanDataForExport = (data: any[]) => {
-  return data.map(row => {
-    const { id, errors, ...rest } = row;
+const cleanDataForExport = (data: DataRow[]) => {
+  return data.map(({ id, errors, ...rest }) => {
     // Re-stringify arrays for CSV
-    for(const key in rest) {
-        if (Array.isArray(rest[key])) {
-            rest[key] = rest[key].join(',');
-        }
+    for (const key in rest) {
+      if (Array.isArray(rest[key])) {
+        rest[key] = (rest[key] as string[]).join(',');
+      }
     }
     return rest;
   });
@@ -30,7 +28,7 @@ export const exportAllData = async (state: AppState) => {
   const clientsCsv = Papa.unparse(cleanedClients);
   const workersCsv = Papa.unparse(cleanedWorkers);
   const tasksCsv = Papa.unparse(cleanedTasks);
-  
+
   // 3. Create config JSON
   const config = {
     rules: state.rules,
