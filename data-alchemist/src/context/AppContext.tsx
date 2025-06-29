@@ -1,7 +1,8 @@
+
 'use client';
 
 import React, { createContext, useReducer, useContext, ReactNode } from 'react';
-import { AppState, AppAction, Client, Worker, Task } from '@/lib/types';
+import { AppState, AppAction, EntityType, Client, Worker, Task } from '@/lib/types';
 import { runAllValidations } from '@/lib/validators';
 
 const initialState: AppState = {
@@ -29,6 +30,8 @@ const AppContext = createContext<{
   dispatch: () => null,
 });
 
+type Row = Client | Worker | Task;
+
 const appReducer = (state: AppState, action: AppAction): AppState => {
   switch (action.type) {
     case 'SET_DATA':
@@ -39,29 +42,43 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
 
     case 'UPDATE_CELL': {
       const { entity, rowIndex, columnId, value } = action.payload;
-      const updatedRows = [...state[entity]];
 
-      const updatedRow = { ...updatedRows[rowIndex] } as Record<string, any>;
+      // Get a copy of the existing rows (Client[] | Worker[] | Task[])
+      const currentRows = state[entity] as Row[];
+      const updatedRows = [...currentRows];
 
-      // Simple coercion logic
-      if (['PriorityLevel', 'MaxLoadPerPhase', 'Duration', 'MaxConcurrent'].includes(columnId)) {
-        updatedRow[columnId] = Number(value);
+      // Copy and update a single row
+      const updatedRow = { ...updatedRows[rowIndex] };
+
+      if (
+        ['PriorityLevel', 'MaxLoadPerPhase', 'Duration', 'MaxConcurrent', 'QualificationLevel'].includes(columnId)
+      ) {
+        updatedRow[columnId] = typeof value === 'string' ? Number(value) : value;
       } else if (['RequestedTaskIDs', 'Skills', 'RequiredSkills'].includes(columnId)) {
-        updatedRow[columnId] = value.split(',').map((s: string) => s.trim());
+        if (typeof value === 'string') {
+          updatedRow[columnId] = value.split(',').map((s) => s.trim());
+        } else {
+          updatedRow[columnId] = Array.isArray(value) ? value : [];
+        }
       } else {
         updatedRow[columnId] = value;
       }
 
-      updatedRows[rowIndex] = updatedRow as any;
+      updatedRows[rowIndex] = updatedRow;
 
       return {
         ...state,
-        [entity]: updatedRows,
+        [entity]: updatedRows as typeof state[typeof entity],
       };
     }
 
     case 'RUN_VALIDATIONS': {
-      const validationResult = runAllValidations(action.payload); // expects { clients, workers, tasks }
+      const validationResult = runAllValidations({
+        ...state,
+        clients: action.payload.clients,
+        workers: action.payload.workers,
+        tasks: action.payload.tasks,
+      });
 
       return {
         ...state,
