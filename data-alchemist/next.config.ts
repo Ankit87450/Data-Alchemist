@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 
+console.log('✅ next.config.ts loaded');
 const nextConfig: NextConfig = {
   /* config options here */
   eslint: {
@@ -8,3 +9,4 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+``
