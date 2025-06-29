@@ -1,8 +1,7 @@
-// src/app/api/nl-to-modification/route.ts
+
 import { NextResponse } from 'next/server';
 
-// NEW: Also using Mistral-7B Instruct for this task.
-const API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2";
+const API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3";
 const API_KEY = process.env.HUGGING_FACE_API_KEY;
 
 export async function POST(request: Request) {
@@ -15,9 +14,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Query, entity, and schema are required.' }, { status: 400 });
   }
 
-  // NEW: A safer and more robust prompt. We ask the AI to generate a SELECT query.
-  // This prevents the AI from generating destructive queries (like UPDATE or DELETE).
-  // Our frontend will parse the WHERE clause from this safe query.
+  // The prompt is well-designed for Mistral.
   const prompt = `
 [INST] You are an expert in generating SQL queries. Your task is to generate a SQL query to select rows from a table based on a user's request.
 
@@ -28,7 +25,6 @@ The table has the following columns: ${schema.join(', ')}.
 User Request: "${query}"
 
 Generate a SQL SELECT statement to find the rows described in the user request. Only generate the SQL query and nothing else. [/INST]
-SELECT * FROM \`${entity}\`
 `;
   
   try {
@@ -44,18 +40,40 @@ SELECT * FROM \`${entity}\`
       }),
     });
 
+    // ADD MORE DETAILED ERROR HANDLING for consistency and easier debugging.
     if (!response.ok) {
         const errorText = await response.text();
+        console.error(`Hugging Face API Error: Status ${response.status}`, errorText);
+        if (response.status === 401 || response.status === 403) {
+            return NextResponse.json({ error: 'Authorization failed. Your API key may be invalid or you have not accepted the model license.' }, { status: response.status });
+        }
+        if (response.status === 503) {
+            return NextResponse.json({ error: 'The AI model is currently loading. Please try again in 20 seconds.' }, { status: 503 });
+        }
         return NextResponse.json({ error: `AI model request failed: ${response.statusText}`, details: errorText }, { status: response.status });
     }
 
     const result = await response.json();
-    // Prepend the part of the query we provided to get the full statement
-    let sqlCommand = `SELECT * FROM \`${entity}\` ${result[0].generated_text}`;
-    sqlCommand = sqlCommand.replace(/;/g, '').trim(); // Clean up the result
+    let generatedText = result[0].generated_text;
+
+    // --- THIS LOGIC IS NOW MORE ROBUST ---
+    // It intelligently assembles the final SQL command.
+    let sqlCommand;
+    // Check if the AI generated a full query or just the WHERE clause.
+    if (generatedText.trim().toLowerCase().startsWith('select')) {
+      sqlCommand = generatedText;
+    } else {
+      // If it only generated the WHERE part, prepend the SELECT part.
+      sqlCommand = `SELECT * FROM \`${entity}\` ${generatedText}`;
+    }
+
+    // Clean up the final result.
+    sqlCommand = sqlCommand.replace(/;/g, '').replace(/\n/g, ' ').trim();
 
     return NextResponse.json({ sqlCommand });
+
   } catch (error) {
+    console.error("Internal error in /api/nl-to-modification:", error);
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
   }
 }
