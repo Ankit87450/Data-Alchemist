@@ -1,7 +1,8 @@
-// src/app/api/fix-cell/route.ts
+
 import { NextResponse } from 'next/server';
 
-const API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-large";
+// Using a powerful instruction-tuned model is a great choice for this task.
+const API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2";
 const API_KEY = process.env.HUGGING_FACE_API_KEY;
 
 export async function POST(request: Request) {
@@ -15,12 +16,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid value and context are required' }, { status: 400 });
   }
 
+  // A prompt specifically designed for an instruction-tuned model like Mistral
   const prompt = `
-    Fix the following data value based on the context. Only return the corrected value itself, with no extra text.
-    Context: The value should be a ${context}.
-    Invalid Value: "${invalidValue}"
-    Corrected Value:
-  `;
+[INST] You are a data correction expert. Your task is to fix the following data value based on the provided context.
+Your response must ONLY be the corrected value itself, with no extra text, explanations, or quotation marks.
+
+Context: The value must be a ${context}.
+Invalid Value: \`${invalidValue}\`
+[/INST]
+`;
 
   try {
     const response = await fetch(API_URL, {
@@ -29,7 +33,14 @@ export async function POST(request: Request) {
         'Authorization': `Bearer ${API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ inputs: prompt }),
+      body: JSON.stringify({
+        inputs: prompt,
+        parameters: {
+            max_new_tokens: 100,      // Limit output size
+            return_full_text: false,  // Return only the AI's generation
+            temperature: 0.1,         // Make the output more deterministic
+        }
+      }),
     });
 
     if (!response.ok) {
@@ -39,7 +50,12 @@ export async function POST(request: Request) {
     }
 
     const result = await response.json();
-    const fixedValue = result[0].generated_text.trim();
+    let fixedValue = result[0].generated_text.trim();
+    
+    // Clean up potential markdown formatting from the AI
+    if (fixedValue.startsWith("`") && fixedValue.endsWith("`")) {
+        fixedValue = fixedValue.substring(1, fixedValue.length - 1);
+    }
 
     return NextResponse.json({ fixedValue });
   } catch (error) {
